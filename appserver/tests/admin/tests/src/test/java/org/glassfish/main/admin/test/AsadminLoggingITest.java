@@ -59,6 +59,7 @@ import static org.hamcrest.Matchers.matchesPattern;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * @author David Matejcek
@@ -71,7 +72,7 @@ public class AsadminLoggingITest {
     @BeforeAll
     public static void fillUpServerLog() {
         // Fill up the server log.
-        AsadminResult result = ASADMIN.exec(60_000, "restart-domain");
+        AsadminResult result = ASADMIN.exec("restart-domain", "--timeout", "60");
         assertThat(result, asadminOK());
     }
 
@@ -80,9 +81,10 @@ public class AsadminLoggingITest {
     public void collectLogFiles() {
         AsadminResult result = ASADMIN.exec("collect-log-files");
         assertThat(result, asadminOK());
-        String path = StringUtils.substringBetween(result.getStdOut(), "Created Zip file under ", ".\n");
+        String path = StringUtils.substringBetween(result.getStdOut(), "Created Zip file under ", ".zip.") + ".zip";
         assertNotNull(path, () -> "zip file path parsed from " + result.getStdOut());
         File zipFile = new File(path);
+        assertTrue(zipFile.exists(), () -> "zip file exists: " + zipFile);
         assertAll(
             () -> assertThat(zipFile.length(), greaterThan(2_000L)),
             () -> assertThat(zipFile.getName(), endsWith(".zip"))

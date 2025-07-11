@@ -31,6 +31,7 @@ import java.util.Properties;
 
 import org.glassfish.api.admin.RuntimeType;
 import org.glassfish.api.admin.ServerEnvironment;
+import org.glassfish.main.jdke.props.SystemProperties;
 import org.jvnet.hk2.annotations.Service;
 
 import static org.glassfish.embeddable.GlassFishVariable.INSTALL_ROOT;
@@ -38,7 +39,6 @@ import static org.glassfish.embeddable.GlassFishVariable.INSTANCE_ROOT;
 
 /**
  * Defines various global configuration for the running {@code GlassFish} instance.
- *
  * <p>
  * This primarily replaces all the system variables in V2.
  *
@@ -111,17 +111,17 @@ public class ServerEnvironmentImpl implements ServerEnvironment {
     @PostConstruct
     public void postConstruct() {
 
-        // todo : dochez : this will need to be reworked...
         String installRoot = startupContext.getArguments().getProperty(INSTALL_ROOT.getPropertyName());
         if (installRoot == null) {
             // During unit testing, we find an empty StartupContext.
             // Let's first see if the installRoot system property is set in the client VM. If not
             // to be consistent with earlier code (i.e., code that relied on StartupContext.getRootDirectory()),
             // I am setting user.dir as installRoot.
-            if (System.getProperty(INSTALL_ROOT.getSystemPropertyName()) != null) {
-                installRoot = System.getProperty(INSTALL_ROOT.getSystemPropertyName());
-            } else {
+            if (System.getProperty(INSTALL_ROOT.getSystemPropertyName()) == null) {
+                // current directory
                 installRoot = System.getProperty("user.dir");
+            } else {
+                installRoot = System.getProperty(INSTALL_ROOT.getSystemPropertyName());
             }
         }
         asenv = new ASenvPropertyReader(new File(installRoot));
@@ -129,42 +129,27 @@ public class ServerEnvironmentImpl implements ServerEnvironment {
         // Default
         if (this.root == null) {
             String envVar = System.getProperty(INSTANCE_ROOT.getSystemPropertyName());
-            if (envVar!=null) {
+            if (envVar != null) {
                 root = new File(envVar);
             } else {
                 String instanceRoot = startupContext.getArguments().getProperty(INSTANCE_ROOT.getPropertyName());
                 if (instanceRoot == null) {
-                    // In client container, instanceRoot is not set. It is a different question altogether as to why
-                    // an object called ServerEnvironmentImpl is at all active in client runtime. To be consistent
-                    // with earlier code, we use installRoot as instanceRoot.
+                    // In client container, instanceRoot is not set.
+                    // It is a different question altogether as to why
+                    // an object called ServerEnvironmentImpl is at all active in client runtime.
+                    // To be consistent with earlier code, we use installRoot as instanceRoot.
                     instanceRoot = installRoot;
                 }
                 root = new File(instanceRoot);
             }
         }
 
-        /*
-         * bnevins 12/12/11
-         * The following chunk of code sets things like hostname to be a file under instance root
-         * I.e. it's crazy.  It's 1 hour until SCF so I'll just fix the current problem which is a NPE
-         * if the value is null.
-         * At any rate the weird values that get set into System Properties get un-done at
-         * the line of code in bootstrap (see end of this comment).  It's easy to trace just step out of this method
-         * in a debugger
-         * createGlassFish(gfKernel, habitat, gfProps.getProperties())
-         */
         asenv.getProps().put(INSTANCE_ROOT.getPropertyName(), root.getAbsolutePath());
         for (Map.Entry<String, String> entry : asenv.getProps().entrySet()) {
-
-            if (entry.getValue() == null) { // don't NPE File ctor
+            if (entry.getValue() == null) {
                 continue;
             }
-
-            File location = new File(entry.getValue());
-            if (!location.isAbsolute()) {
-                location = new File(asenv.getProps().get(INSTANCE_ROOT.getPropertyName()), entry.getValue());
-            }
-            System.setProperty(entry.getKey(), location.getAbsolutePath());
+            SystemProperties.setProperty(entry.getKey(), entry.getValue(), true);
         }
 
         Properties args = startupContext.getArguments();
@@ -181,15 +166,10 @@ public class ServerEnvironmentImpl implements ServerEnvironment {
         domainName = s;
 
         s = args.getProperty("-instancename");
+        instanceName = isNotEmpty(s) ? s : "server";
 
-        if (!isNotEmpty(s)) {
-            instanceName = "server";
-        } else {
-            instanceName = s;
-        }
-        // bnevins IT 10209
         asenv.getProps().put(SystemPropertyConstants.SERVER_NAME, instanceName);
-        System.setProperty(SystemPropertyConstants.SERVER_NAME, instanceName);
+        SystemProperties.setProperty(SystemPropertyConstants.SERVER_NAME, instanceName, true);
 
         // bnevins Apr 2010 adding clustering support...
         String typeString = args.getProperty("-type");
@@ -356,6 +336,7 @@ public class ServerEnvironmentImpl implements ServerEnvironment {
         this.status = status;
     }
 
+    @Override
     public boolean isEmbedded() {
         return serverType == RuntimeType.EMBEDDED;
     }
